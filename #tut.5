@@ -1,0 +1,156 @@
+# ================== COVID-19 DATA ANALYSIS PROJECT ==================
+
+# -------------------- IMPORT LIBRARIES --------------------
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# -------------------- SETTINGS --------------------
+FILE_PATH = "time_series_covid19_confirmed_global.csv"
+COUNTRIES = ["India", "US", "Brazil"]
+
+# -------------------- LOAD DATA --------------------
+if not os.path.isfile(FILE_PATH):
+    print("\n❌ ERROR: Dataset file not found!")
+    print("👉 Download from:")
+    print("https://github.com/CSSEGISandData/COVID-19")
+    exit()
+
+try:
+    df = pd.read_csv(FILE_PATH)
+except Exception as e:
+    print(f"\n❌ ERROR loading file: {e}")
+    exit()
+
+# -------------------- DATA CLEANING --------------------
+df = df.drop(columns=["Lat", "Long"], errors="ignore")
+
+# Group by country
+df = df.groupby("Country/Region", as_index=True).sum()
+
+# Transpose (dates → rows)
+df = df.T
+
+# Convert index to datetime
+df.index = pd.to_datetime(df.index, errors="coerce")
+
+# Drop invalid dates
+df = df[df.index.notna()]
+
+# Sort index (important)
+df = df.sort_index()
+
+print("\n✅ Data Loaded Successfully!")
+print("📊 Dataset shape:", df.shape)
+
+# -------------------- DAILY CASES --------------------
+daily_cases = df.diff().fillna(0)
+
+# Remove negative values (data corrections)
+daily_cases[daily_cases < 0] = 0
+
+# -------------------- WEEKLY CASES --------------------
+weekly_cases = daily_cases.resample("W").sum()
+
+# -------------------- ROLLING AVERAGE --------------------
+rolling_avg = daily_cases.rolling(window=7, min_periods=1).mean()
+
+# -------------------- COUNTRY VALIDATION --------------------
+available_countries = [c for c in COUNTRIES if c in df.columns]
+
+if not available_countries:
+    print("\n❌ ERROR: None of the selected countries found in dataset!")
+    exit()
+
+print("🌍 Countries selected:", available_countries)
+
+# -------------------- SAFE PLOT FUNCTION --------------------
+def plot_graph(data, title, filename):
+    try:
+        plt.figure(figsize=(10, 5))
+
+        for country in available_countries:
+            plt.plot(data.index, data[country], label=country)
+
+        plt.title(title)
+        plt.xlabel("Date")
+        plt.ylabel("Cases")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(filename)
+        plt.close()
+
+        print(f"📊 Saved: {filename}")
+
+    except Exception as e:
+        print(f"❌ Error plotting {title}: {e}")
+
+# -------------------- GENERATE PLOTS --------------------
+plot_graph(daily_cases, "Daily COVID-19 Cases", "daily_cases.png")
+plot_graph(rolling_avg, "7-Day Rolling Average", "rolling_average.png")
+plot_graph(weekly_cases, "Weekly COVID-19 Cases", "weekly_cases.png")
+
+# -------------------- PEAK DETECTION --------------------
+print("\n📈 Peak Analysis:")
+for country in available_countries:
+    try:
+        peak_date = rolling_avg[country].idxmax()
+        peak_value = rolling_avg[country].max()
+
+        if pd.notna(peak_date):
+            print(f"{country}: Peak on {peak_date.date()} with {int(peak_value)} cases")
+
+    except Exception as e:
+        print(f"{country}: Error detecting peak → {e}")
+
+# -------------------- REPRODUCTION NUMBER (Rt) --------------------
+Rt = daily_cases / daily_cases.shift(4)
+
+# Handle division errors
+Rt = Rt.replace([np.inf, -np.inf], np.nan)
+
+# Smooth Rt
+Rt = Rt.rolling(window=7, min_periods=1).mean()
+
+# -------------------- PLOT Rt --------------------
+try:
+    plt.figure(figsize=(10, 5))
+
+    for country in available_countries:
+        plt.plot(Rt.index, Rt[country], label=country)
+
+    plt.axhline(y=1, linestyle='--')
+    plt.title("Estimated Reproduction Number (Rt)")
+    plt.xlabel("Date")
+    plt.ylabel("Rt")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("Rt_plot.png")
+    plt.close()
+
+    print("📊 Saved: Rt_plot.png")
+
+except Exception as e:
+    print(f"❌ Error plotting Rt: {e}")
+
+# -------------------- SAVE DATA --------------------
+try:
+    rolling_avg.to_csv("rolling_average_data.csv")
+    weekly_cases.to_csv("weekly_cases_data.csv")
+    print("📁 Data files saved successfully")
+
+except Exception as e:
+    print(f"❌ Error saving data: {e}")
+
+# -------------------- FINAL OUTPUT --------------------
+print("\n🎯 Analysis Completed Successfully!")
+print("\nGenerated Files:")
+print(" - daily_cases.png")
+print(" - rolling_average.png")
+print(" - weekly_cases.png")
+print(" - Rt_plot.png")
+print(" - rolling_average_data.csv")
+print(" - weekly_cases_data.csv")
